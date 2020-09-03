@@ -5,6 +5,8 @@ import com.xxl.rpc.core.remoting.invoker.reference.XxlRpcReferenceBean;
 import com.xxl.rpc.core.remoting.net.params.BaseCallback;
 import com.xxl.rpc.core.remoting.net.params.XxlRpcRequest;
 import com.xxl.rpc.core.serialize.Serializer;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -50,7 +52,7 @@ public abstract class ConnectClient {
     }
 
     private static volatile ConcurrentMap<String, ConnectClient> connectClientMap;        // (static) alread addStopCallBack
-    private static volatile ConcurrentMap<String, Object> connectClientLockMap = new ConcurrentHashMap<>();
+    private static volatile ConcurrentMap<String, ReentrantLock> connectClientLockMap = new ConcurrentHashMap<>();
     private static ConnectClient getPool(String address, Class<? extends ConnectClient> connectClientImpl,
                                          final XxlRpcReferenceBean xxlRpcReferenceBean) throws Exception {
 
@@ -84,14 +86,20 @@ public abstract class ConnectClient {
         }
 
         // lock
-        Object clientLock = connectClientLockMap.get(address);
+        ReentrantLock clientLock  = connectClientLockMap.get(address);
         if (clientLock == null) {
-            connectClientLockMap.putIfAbsent(address, new Object());
+            connectClientLockMap.putIfAbsent(address, new ReentrantLock());
             clientLock = connectClientLockMap.get(address);
         }
 
+        boolean lockFlag = clientLock.tryLock(10, TimeUnit.SECONDS);
+        if(!lockFlag){
+            String msg = "try lock failed, address:"+address;
+            logger.warn(msg);
+            throw new RuntimeException(msg);
+        }
         // remove-create new client
-        synchronized (clientLock) {
+        try{
 
             // get-valid client, avlid repeat
             connectClient = connectClientMap.get(address);
@@ -116,6 +124,10 @@ public abstract class ConnectClient {
             }
 
             return connectClient_new;
+        }finally {
+            if(lockFlag){
+                clientLock.unlock();
+            }
         }
 
     }
