@@ -125,9 +125,7 @@ public abstract class ConnectClient {
 
             return connectClient_new;
         }finally {
-            if(lockFlag){
-                clientLock.unlock();
-            }
+            clientLock.unlock();
         }
 
     }
